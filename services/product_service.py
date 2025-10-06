@@ -32,7 +32,20 @@ class ProductService:
 
         tr_products = []
         for p in products:
-            if len(p.split()) > 3:
-                tr_products.append(p)
+            ln_l = 0
+            ln = 0
+            for w in p:
+                if w.isalpha():
+                    print(w)
+                    ln += 1
+                    if w.isupper():
+                        ln_l += 1
+            if ln != 0:
+                pr = ln_l / ln
+            else:
+                pr = 0
 
+            if len(p.split()) > 3 and len(p) < 100 and pr < 0.5:
+                tr_products.append(p)
+        print(tr_products)
         return tr_products if tr_products else [], tokenized_data
