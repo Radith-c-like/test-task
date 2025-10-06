@@ -39,9 +39,24 @@ class FurnitureExtractor:
                 if has_product:
                     tokenized_data.append({"tokens": words, "labels": word_labels})
 
+
             except Exception as e:
                 print(f"[WARNING] NER processing failed for text '{text}': {e}")
                 continue
 
         products = [p for p in products if p and not any(c in p for c in ['#', '$', '%'])]
-        return products if products else [], tokenized_data
+        #roducts = [p for p in products if any(len(w) >= 3 for w in p.split())]
+        tr_products = []
+        for p in products:
+            if len(p.split()) >= 3:
+                tr_products.append(p)
+
+        print(products)
+        return tr_products if tr_products else   [], tokenized_data
+
+    def sort_products(self, products, method='default'):
+        if method == 'default':
+            return sorted(products, key=lambda x: len(x.split()))
+        else:
+            return sorted(products, key=lambda x: x.lower())
+        
