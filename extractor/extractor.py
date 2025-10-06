@@ -1,28 +1,47 @@
-from sklearn.metrics.pairwise import cosine_similarity
-from config import model, ANCHOR_EMBEDDINGS, SIMILARITY_THRESHOLD
-from .fetcher import fetch_page
-from .parser import parse_candidates
+# extractor.py
+from ner_service import NERService
+from scraper import FurnitureScraper, clean_text
+from config import Config
 
-def extract_products(url, verbose=False):
-    soup, error = fetch_page(url)
-    
-    if error:
-        return [error]
+class FurnitureExtractor:
+    def __init__(self):
+        self.scraper = FurnitureScraper()
+        self.ner_service = NERService()
 
-    candidates = parse_candidates(soup, verbose=verbose)
+    def extract_products(self, url):
+        if not self.ner_service.ner_pipeline:
+            return ["Error: NER model not loaded"], []
 
-    if not candidates:
-        return ["Error: No valid product information found on the page"]
+        soup = self.scraper.fetch_page(url)
+        texts = self.scraper.extract_texts(soup)
+        products = []
+        tokenized_data = []
 
-    cand_emb = model.encode(candidates, convert_to_tensor=True, show_progress_bar=False)
-    if cand_emb.is_cuda:
-        cand_emb = cand_emb.cpu()
-    cand_emb = cand_emb.numpy()
+        for text in texts:
+            try:
+                words = text.split()
+                word_labels = ["O"] * len(words)
+                has_product = False
 
-    sim_matrix = cosine_similarity(cand_emb, ANCHOR_EMBEDDINGS)
-    max_similarities = sim_matrix.max(axis=1)
+                entities = self.ner_service.extract_entities(text)
+                for ent in entities:
+                    if ent['entity_group'] == "PRODUCT" and ent['score'] >= Config.MIN_SCORE:
+                        cleaned_product = clean_text(ent['word'])
+                        if cleaned_product and cleaned_product not in products:
+                            products.append(cleaned_product)
+                            has_product = True
+                            product_words = ent['word'].split()
+                            for i in range(len(words) - len(product_words) + 1):
+                                if ' '.join(words[i:i+len(product_words)]) == ent['word']:
+                                    for j in range(i, i + len(product_words)):
+                                        word_labels[j] = "PRODUCT"
 
-    products = [(candidates[i], sim) for i, sim in enumerate(max_similarities) if sim > SIMILARITY_THRESHOLD]
-    products.sort(key=lambda x: x[1], reverse=True)
+                if has_product:
+                    tokenized_data.append({"tokens": words, "labels": word_labels})
 
-    return [p[0] for p in products]
+            except Exception as e:
+                print(f"[WARNING] NER processing failed for text '{text}': {e}")
+                continue
+
+        products = [p for p in products if p and not any(c in p for c in ['#', '$', '%'])]
+        return products if products else [], tokenized_data
